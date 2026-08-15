@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VLESS → Xray Config</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Tahoma,Arial,sans-serif;background:linear-gradient(135deg,#eef2ff,#f8fafc);color:#17202a}
+  .wrap{max-width:1000px;margin:28px auto;padding:0 16px}
+  .card{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:22px;box-shadow:0 12px 35px #11182712;margin-bottom:16px}
+  h1{font-size:25px;margin:0 0 20px;text-align:center;letter-spacing:.2px}
+  p{color:#667085;margin:6px 0 18px;line-height:1.8}
+  label{display:block;font-weight:700;margin:14px 0 7px}
+  textarea{width:100%;min-height:165px;resize:vertical;border:1px solid #ccd3da;border-radius:10px;padding:12px;font:14px/1.8 Consolas,monospace;direction:ltr;text-align:left}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  button{border:0;border-radius:11px;padding:11px 17px;cursor:pointer;font-weight:700;transition:.15s}
+  .primary{background:#2563eb;color:#fff}.secondary{background:#eef2f6;color:#17202a}.primary:hover,.secondary:hover{filter:brightness(.96)}
+  pre{direction:ltr;text-align:left;white-space:pre-wrap;word-break:break-word;background:#10151b;color:#e7edf3;padding:16px;border-radius:10px;max-height:600px;overflow:auto;font:13px/1.6 Consolas,monospace}
+  .status{padding:10px 12px;border-radius:9px;margin-top:12px;display:none}
+  .ok{display:block;background:#e9f8ef;color:#176b39}.err{display:block;background:#fff0f0;color:#a61b1b}
+  .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:14px}
+  .field{background:#f7f9fb;border-radius:10px;padding:10px}.field small{display:block;color:#667085;margin-bottom:4px}.field code{direction:ltr;display:block;word-break:break-all}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>vless to json</h1>
+
+    <label for="vless">لینک VLESS</label>
+    <textarea id="vless" placeholder="vless://..."></textarea>
+
+    <div class="row">
+      <button class="primary" onclick="convert()">تبدیل</button>
+      <button class="secondary" onclick="copyOutput()">کپی JSON</button>
+      <button class="secondary" onclick="downloadOutput()">دانلود JSON</button>
+      <button class="secondary" onclick="clearAll()">پاک کردن</button>
+    </div>
+
+    <div id="status" class="status"></div>
+    <div id="fields" class="fields"></div>
+  </div>
+
+  <div class="card">
+    <label>خروجی JSON</label>
+    <pre id="output">{}</pre>
+  </div>
+</div>
+
+<script>
+const TEMPLATE = {
+  "dns": {
+    "hosts": {
+      "domain:googleapis.cn": "googleapis.com",
+      "dns.alidns.com": ["223.5.5.5","223.6.6.6","2400:3200::1","2400:3200:baba::1"],
+      "dns.sse.cisco.com": ["208.67.220.220","208.67.222.222","2620:119:35::35","2620:119:53::53"],
+      "dns.umbrella.com": ["208.67.220.220","208.67.222.222","2620:119:35::35","2620:119:53::53"],
+      "one.one.one.one": ["1.1.1.1","1.0.0.1","2606:4700:4700::1111","2606:4700:4700::1001"],
+      "1dot1dot1dot1.cloudflare-dns.com": ["1.1.1.1","1.0.0.1","2606:4700:4700::1111","2606:4700:4700::1001"],
+      "dns.cloudflare.com": ["162.159.61.8","172.64.41.8","2a06:98c1:52::8","2803:f800:53::8"],
+      "cloudflare-dns.com": ["104.16.248.249","104.16.249.249","2606:4700::6810:f8f9","2606:4700::6810:f9f9"],
+      "engage.cloudflareclient.com": ["162.159.192.1","2606:4700:d0::a29f:c001"],
+      "doh.pub": ["1.12.12.12","120.53.53.53"],
+      "dot.pub": ["1.12.12.12","120.53.53.53"],
+      "dns.google": ["8.8.8.8","8.8.4.4","2001:4860:4860::8888","2001:4860:4860::8844"],
+      "dns.quad9.net": ["9.9.9.9","149.112.112.112","2620:fe::fe","2620:fe::9"],
+      "dns.sb": ["45.11.45.11","185.222.222.222","2a09::","2a11::"],
+      "common.dot.dns.yandex.net": ["77.88.8.8","77.88.8.1","2a02:6b8::feed:0ff","2a02:6b8:0:1::feed:0ff"]
+    },
+    "servers": [
+      "https://cloudflare-dns.com/dns-query",
+      {"address":"223.5.5.5","domains":["geosite:cn"],"expectIPs":["geoip:cn"],"skipFallback":true,"tag":"domestic-dns_cn_expect_0"},
+      {"address":"https://cloudflare-dns.com/dns-query","domains":["geosite:google"]},
+      {"address":"223.5.5.5","domains":["geosite:private"],"skipFallback":true,"tag":"domestic-dns_1_0"},
+      {"address":"223.5.5.5","domains":["domain:alidns.com","domain:doh.pub","domain:dot.pub","domain:360.cn","domain:onedns.net"],"skipFallback":true,"tag":"domestic-dns_2_0"},
+      {"address":"223.5.5.5","domains":["geosite:cn"],"skipFallback":true,"tag":"domestic-dns_3_0"}
+    ],
+    "tag":"dns-module"
+  },
+  "inbounds": [
+    {"listen":"127.0.0.1","port":10808,"protocol":"socks","settings":{"auth":"noauth","udp":true,"userLevel":8},"sniffing":{"destOverride":["http","tls","quic"],"enabled":true,"routeOnly":false},"tag":"socks"},
+    {"listen":"127.0.0.1","port":10809,"protocol":"http","settings":{"userLevel":8},"sniffing":{"destOverride":["http","tls","quic"],"enabled":true,"routeOnly":false},"tag":"http"}
+  ],
+  "log":{"loglevel":"warning"},
+  "outbounds":[
+    {
+      "mux":{"concurrency":-1,"enabled":false},
+      "protocol":"vless",
+      "settings":{"address":"198.51.100.10","encryption":"none","flow":"","id":"00000000-0000-4000-8000-000000000000","level":8,"port":443},
+      "streamSettings":{
+        "finalmask":{
+          "tcp":[
+            {"type":"fragment","settings":{"packets":"tlshello","lengths":["5","94","1"],"delays":["0"],"maxSplit":"0"}},
+            {"type":"fragment","settings":{"packets":"1-1","lengths":["109","1"],"delays":["1"],"maxSplit":"355"}}
+          ]
+        },
+        "network":"ws",
+        "security":"tls",
+        "tlsSettings":{
+          "allowInsecure":false,
+          "alpn":["http/1.1"],
+          "cipherSuites":"TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384:TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384:TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256:TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256:TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA:TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA:TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256:TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
+          "fingerprint":"unsafe",
+          "serverName":"sni.example.invalid"
+        },
+        "wsSettings":{
+          "host":"host.example.invalid",
+          "path":"/path/example?ed=2560"
+        }
+      },
+      "tag":"proxy"
+    },
+    {"protocol":"freedom","streamSettings":{"network":"tcp","sockopt":{"domainStrategy":"UseIP"}},"tag":"direct"},
+    {"protocol":"blackhole","settings":{},"tag":"block"}
+  ],
+  "remarks":"cfg-198.51.100.10-443",
+  "routing":{
+    "domainStrategy":"AsIs",
+    "rules":[
+      {"network":"udp","outboundTag":"block","port":"443","type":"field"},
+      {"domain":["geosite:google"],"outboundTag":"proxy","type":"field"},
+      {"ip":["ext:geoip-only-cn-private.dat:private"],"outboundTag":"direct","type":"field"},
+      {"domain":["geosite:private"],"outboundTag":"direct","type":"field"},
+      {"ip":["223.5.5.5","223.6.6.6","2400:3200::1","2400:3200:baba::1","119.29.29.29","1.12.12.12","120.53.53.53","2402:4e00::","2402:4e00:1::","180.76.76.76","2400:da00::6666","114.114.114.114","114.114.115.115","114.114.114.119","114.114.115.119","114.114.114.110","114.114.115.110","180.184.1.1","180.184.2.2","101.226.4.6","218.30.118.6","123.125.81.6","140.207.198.6","1.2.4.8","210.2.4.8","52.80.66.66","117.50.22.22","2400:7fc0:849e:200::4","2404:c2c0:85d8:901::4","117.50.10.10","52.80.52.52","2400:7fc0:849e:200::8","2404:c2c0:85d8:901::8","117.50.60.30","52.80.60.30"],"outboundTag":"direct","type":"field"},
+      {"domain":["domain:alidns.com","domain:doh.pub","domain:dot.pub","domain:360.cn","domain:onedns.net"],"outboundTag":"direct","type":"field"},
+      {"ip":["ext:geoip-only-cn-private.dat:cn"],"outboundTag":"direct","type":"field"},
+      {"domain":["geosite:cn"],"outboundTag":"direct","type":"field"},
+      {"inboundTag":["domestic-dns_1_0","domestic-dns_2_0","domestic-dns_3_0","domestic-dns_cn_expect_0"],"outboundTag":"direct","type":"field"},
+      {"inboundTag":["dns-module"],"outboundTag":"proxy","type":"field"}
+    ]
+  },
+  "stats":{},
+  "policy":{"system":{"statsOutboundUplink":true,"statsOutboundDownlink":true}}
+};
+
+function parseVless(raw){
+  raw = raw.trim();
+  if(!raw.toLowerCase().startsWith("vless://")) throw new Error("لینک باید با vless:// شروع شود.");
+
+  const u = new URL(raw);
+  const uuid = decodeURIComponent(u.username);
+  if(!uuid) throw new Error("UUID پیدا نشد.");
+
+  const address = u.hostname;
+  const port = u.port ? Number(u.port) : 443;
+  const q = u.searchParams;
+
+  const host = q.get("host") || "";
+  const path = q.get("path") || "";
+  const sni = q.get("sni") || "";
+
+  if(!address) throw new Error("Address پیدا نشد.");
+  if(!host) throw new Error("پارامتر host در لینک وجود ندارد.");
+  if(!path) throw new Error("پارامتر path در لینک وجود ندارد.");
+  if(!sni) throw new Error("پارامتر sni در لینک وجود ندارد.");
+
+  return {uuid,address,port,host,path,sni};
+}
+
+function clone(o){ return JSON.parse(JSON.stringify(o)); }
+
+function convert(){
+  const status = document.getElementById("status");
+  const out = document.getElementById("output");
+  const fields = document.getElementById("fields");
+
+  try{
+    const v = parseVless(document.getElementById("vless").value);
+    const cfg = clone(TEMPLATE);
+    const proxy = cfg.outbounds[0];
+
+    proxy.settings.id = v.uuid;
+    proxy.settings.address = v.address;
+    proxy.settings.port = v.port;
+    proxy.streamSettings.wsSettings.host = v.host;
+    proxy.streamSettings.wsSettings.path = v.path;
+    proxy.streamSettings.tlsSettings.serverName = v.sni;
+
+    // remarks مطابق آدرس و پورت ورودی
+    cfg.remarks = `cfg-${v.address}-${v.port}`;
+
+    out.textContent = JSON.stringify(cfg, null, 2);
+
+    fields.innerHTML = `
+      <div class="field"><small>UUID</small><code>${esc(v.uuid)}</code></div>
+      <div class="field"><small>Address:Port</small><code>${esc(v.address + ":" + v.port)}</code></div>
+      <div class="field"><small>Host</small><code>${esc(v.host)}</code></div>
+      <div class="field"><small>Path</small><code>${esc(v.path)}</code></div>
+      <div class="field"><small>SNI</small><code>${esc(v.sni)}</code></div>
+    `;
+    status.className = "status ok";
+    status.textContent = "تبدیل با موفقیت انجام شد.";
+  }catch(e){
+    status.className = "status err";
+    status.textContent = e.message;
+    fields.innerHTML = "";
+    out.textContent = "{}";
+  }
+}
+
+function esc(s){
+  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function getOutput(){
+  const text = document.getElementById("output").textContent.trim();
+  if(text === "{}") throw new Error("اول لینک VLESS را تبدیل کنید.");
+  return text;
+}
+
+function copyOutput(){
+  try{
+    const text = getOutput();
+
+    // روش ساده و سازگارتر با فایل HTML محلی و موبایل
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    ta.style.top = "0";
+    ta.setAttribute("readonly", "");
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+
+    if(ok) {
+      show("JSON کپی شد.","ok");
+    } else {
+      throw new Error("کپی خودکار توسط مرورگر پشتیبانی نشد.");
+    }
+  }catch(e){
+    show(e.message,"err");
+  }
+}
+
+function downloadOutput(){
+  try{
+    const text = getOutput();
+    const blob = new Blob([text], {type:"application/json;charset=utf-8"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "xray-config.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  }catch(e){ show(e.message,"err"); }
+}
+
+function show(msg, type){
+  const s=document.getElementById("status");
+  s.className="status "+type;
+  s.textContent=msg;
+}
+
+function clearAll(){
+  document.getElementById("vless").value="";
+  document.getElementById("output").textContent="{}";
+  document.getElementById("fields").innerHTML="";
+  document.getElementById("status").className="status";
+  document.getElementById("status").textContent="";
+}
+</script>
+</body>
+</html>
